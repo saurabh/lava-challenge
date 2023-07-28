@@ -117,7 +117,7 @@ export default function Home() {
   
   const processBlocks = (blocks: Block[]) => {
     console.log('processing blocks')
-    let relays: RelaySession[] = [];
+    let newRelays: RelaySession[] = [];
     for (const block of blocks) {
       try {
         for (const tx of block.txs) {
@@ -126,7 +126,7 @@ export default function Home() {
             for(const msg of decodedTx.body?.messages) {
               if (msg.typeUrl === "/lavanet.lava.pairing.MsgRelayPayment") {
                 const message = msg?.value && MsgRelayPayment.decode(msg.value);
-                relays = relays.concat(message.relays); // Flatten the array
+                newRelays = newRelays.concat(message.relays); // Flatten the array
               }
             }
           }
@@ -135,9 +135,9 @@ export default function Home() {
         console.error('Failed to parse JSON:', err);
       }
     }
-    setRelays(relays);
+    setRelays((prevRelays) => [...prevRelays, ...newRelays]); // Append the new relays to the existing ones
   };
-
+  
   return (
     <>
       <Head>

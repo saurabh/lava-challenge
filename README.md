@@ -8,7 +8,7 @@ Lava Protocol is a decentralized RPC access infrastructure that, in a nutshell, 
 
 ## How the Application Works
 
-The application continually fetches the latest blocks from the Lavanet network and checks each block's decoded transactions for `MsgRelayPayment`. The relay payment messages contain relay sessions, which are used to calculate the number of relays each chain has processed.
+The application continually checks the blockHeight at a 5s interval and when a new block is added, fetches the latest block from the Lavanet network. When the app starts, it fetches the last 20 blocks. The `block.txs` is decoded and checked for `MsgRelayPayment`. The relay payment messages contain relay sessions, which are used to calculate the number of relays each chain has processed.
 
 The chains are then ranked based on the number of relays processed, and the top 10 chains are displayed on the leaderboard. The leaderboard is updated in real time as new blocks are mined.
 
