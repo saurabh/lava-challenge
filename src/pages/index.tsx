@@ -1,10 +1,11 @@
 import Head from "next/head";
 import { useState, useEffect, useRef } from 'react';
 import { StargateClient } from "@cosmjs/stargate"
+import { ToastContainer, toast } from 'react-toastify';
 import { Tx } from "cosmjs-types/cosmos/tx/v1beta1/tx"
 import {MsgRelayPayment} from "@lavanet/lava-sdk/bin/src/codec/pairing/tx"
-import {RelaySession} from "@lavanet/lava-sdk/bin/src/codec/pairing/relay"
-import { ToastContainer, toast } from 'react-toastify';
+import type { Block } from "@cosmjs/stargate/build/stargateclient"
+import type {RelaySession} from "@lavanet/lava-sdk/bin/src/codec/pairing/relay"
 
 export default function Home() {
   // Maximum number of blocks to track
@@ -12,11 +13,10 @@ export default function Home() {
 
   // Refs and states for block height, blocks, sync status, top ten chains and relays
   const blockHeight = useRef(0);
-  const blocksRef  = useRef<any[]>([]);
   const [isSyncing, setIsSyncing] = useState(false);
   const [topTen, setTopTen] = useState<[string, number][]>([]);
   const isSyncingRef = useRef(isSyncing);
-  const [relays, setRelays] = useState([]);
+  const [relays, setRelays] = useState<RelaySession[]>([]);
 
   // Function to update the ref whenever isSyncing changes
   useEffect(() => {
@@ -40,19 +40,38 @@ export default function Home() {
         toast.info("New block mined");
         // Fetch the blocks depending on whether it's the first fetch or not
         if (blockHeight.current !== 0) {
-          await getBlocks(blockHeight.current);
+          await getBlocks(blockHeight.current).catch((error) => console.error(error));
         } else {
           // Fetch the last 20 blocks if this is the first fetch.
-          await getBlocks(Math.max(0, fetchedBlockHeight - 20), fetchedBlockHeight);
+          await getBlocks(Math.max(0, fetchedBlockHeight - 20), fetchedBlockHeight).catch((error) => console.error(error));
         }
         // After fetching the blocks, stop syncing and update the block height
         setIsSyncing(false);
         blockHeight.current = fetchedBlockHeight;
       }
     };
-  
+
+    const getBlocks = async (startHeight: number, endHeight: number = startHeight) => {
+      if (!process.env.NEXT_PUBLIC_LAVA_WSS_URL) {
+        throw new Error("NEXT_PUBLIC_LAVA_WSS_URL not defined");
+      }
+      const blocks: Block[] = [];
+      const client = await StargateClient.connect(process.env.NEXT_PUBLIC_LAVA_WSS_URL!)
+      console.log('fetching blocks from', startHeight, 'to', endHeight)
+      for (let i = startHeight; i <= endHeight; i++) {
+        const block = await client.getBlock(i);
+        blocks.push(block); // Store blocks in the useRef variable
+        if (blocks.length > MAX_BLOCKS) {
+          blocks.shift(); // Remove the oldest block if we exceed the maximum
+        }
+      }
+      processBlocks(blocks); // Process the blocks after they've been fetched
+    };
+    
     // Fetch the block height every 5 seconds
-    const intervalId = setInterval(getBlockHeight, 5000);
+    const intervalId = setInterval(() => {
+      getBlockHeight().catch((error) => console.error(error));
+    }, 5000);
     setIsSyncing(false); // Signal that the app is ready to start syncing
   
     // Clear the interval when the component unmounts
@@ -65,9 +84,9 @@ export default function Home() {
   useEffect(() => {
     function parseRelayData(relays: RelaySession[]) {
       // Parse the relay data decoded from the blocks.txs
-      let parsedData = [];
-      for (let i = 0; i < relays.length; i++) {
-        let session = relays[i];
+      const parsedData = [];
+      for (const relay of relays) {
+        const session = relay;
         if(session) { // Check if session is defined
           parsedData.push({
             specId: session.specId,
@@ -77,8 +96,8 @@ export default function Home() {
         }
       }
       // Calculate the total number of relays per specId
-      let totals: {[key: string]: number} = {};
-      for (let data of parsedData) {
+      const totals: Record<string, number> = {};
+      for (const data of parsedData) {
         if (totals[data.specId]) {
           totals[data.specId] += data.relayNum;
         } else {
@@ -87,34 +106,18 @@ export default function Home() {
       }
       
       // Sort the totals and get the top ten
-      let sortedTotals = Object.entries(totals).sort((a, b) => b[1] - a[1]);
-      let topTen = sortedTotals.slice(0, 10);
+      const sortedTotals = Object.entries(totals).sort((a, b) => b[1] - a[1]);
+      const topTen = sortedTotals.slice(0, 10);
       setTopTen(topTen);
     }
   
     parseRelayData(relays);
   }, [relays]);
 
-  // Functions to fetch the blocks and process them
-  const getBlocks = async (startHeight: number, endHeight: number = startHeight) => {
-    if (!process.env.NEXT_PUBLIC_LAVA_WSS_URL) {
-      throw new Error("NEXT_PUBLIC_LAVA_WSS_URL not defined");
-    }
-    const client = await StargateClient.connect(process.env.NEXT_PUBLIC_LAVA_WSS_URL!)
-    console.log('fetching blocks from', startHeight, 'to', endHeight)
-    for (let i = startHeight; i <= endHeight; i++) {
-      const block = await client.getBlock(i);
-      blocksRef.current.push(block); // Store blocks in the useRef variable
-      if (blocksRef.current.length > MAX_BLOCKS) {
-        blocksRef.current.shift(); // Remove the oldest block if we exceed the maximum
-      }
-    }
-    processBlocks(blocksRef.current); // Process the blocks after they've been fetched
-  };
   
-  const processBlocks = async (blocks: any) => {
+  const processBlocks = (blocks: Block[]) => {
     console.log('processing blocks')
-    let relays: any = [];
+    let relays: RelaySession[] = [];
     for (const block of blocks) {
       try {
         for (const tx of block.txs) {
@@ -123,7 +126,7 @@ export default function Home() {
             for(const msg of decodedTx.body?.messages) {
               if (msg.typeUrl === "/lavanet.lava.pairing.MsgRelayPayment") {
                 const message = msg?.value && MsgRelayPayment.decode(msg.value);
-                relays = message.relays.length > 0 && relays.concat(message.relays); // Flatten the array
+                relays = relays.concat(message.relays); // Flatten the array
               }
             }
           }
@@ -134,7 +137,6 @@ export default function Home() {
     }
     setRelays(relays);
   };
-
 
   return (
     <>
