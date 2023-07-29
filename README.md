@@ -2,6 +2,8 @@
 
 This project showcases a leaderboard of Lavanet chains, ranking them based on the number of relay messages processed. The application is part of a challenge to visualize the top 10 chains on Lava by the number of relays passed in the Lava Blockchain in the last 20 blocks. 
 
+You can access the app here: [Lavanet Chains Leaderboard](https://lava-challenge.vercel.app/).
+
 ## Background
 
 Lava Protocol is a decentralized RPC access infrastructure that, in a nutshell, gives developers the ability to interact with RPC providers for different chains. After the developer pairs with providers and passes relays, the provider reports the work that was done back to the blockchain and asks for payment.
